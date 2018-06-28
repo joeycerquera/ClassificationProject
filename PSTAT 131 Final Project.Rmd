@@ -1,0 +1,147 @@
+---
+title: "Final Project"
+author: "Thomas Simons and Joey Cerquera"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: pdf_document
+---
+
+
+```{r setup, echo=FALSE}
+library(knitr)
+# set global chunk options: images will be 7x5 inches
+knitr::opts_chunk$set(fig.width=7, fig.height=5)
+options(digits = 4)
+
+
+## indents are for indenting r code as formatted text
+## They may need to be adjusted depending on your OS
+# if your output looks odd, increase or decrease indent
+indent1 = '    '
+indent2 = '        '
+indent3 = '            '
+```
+
+
+```{r}
+library(tidyverse)
+library(tree)
+library(randomForest)
+library(gbm)
+library(ROCR)
+library(e1071)
+library(imager)   #load libraries 
+library(plyr)
+library(class)
+library(rpart)
+library(maptree)
+library(ROCR)
+```
+
+
+```{r}
+white_wine <- read.csv("~/UCSB HW R/PSTAT 131 Final/winequality-white.csv", sep = ";")
+red_wine <- read.csv("~/UCSB HW R/PSTAT 131 Final/winequality-red.csv", sep = ";")
+#import data 
+
+
+white_wine <- mutate(white_wine, class = factor(ifelse(white_wine$quality > 5, "good", "bad"), levels = c("good", "bad")))
+
+red_wine <- mutate(red_wine, class = factor(ifelse(red_wine$quality > 5, "good", "bad"), levels = c("good", "bad"))) 
+#create new factor called class for qood or bad wine qulity 
+```
+
+
+1. Exploratory Analysis 
+
+```{r}
+par(mfrow=c(1, 2))
+
+red_hist <- hist(red_wine$quality)  #histogram for red wine 
+white_hist <- hist(white_wine$quality)  #histogram for white wine 
+```
+
+
+```{r}
+#Outliers are observations with quality not equal to 5 or 6 
+
+dim(filter(red_wine, quality >= 7))[1] #number of obs with quality greater than or equal to 7
+dim(filter(red_wine, quality < 5))[1] #number of obs with quality less than 5 
+
+dim(filter(white_wine, quality >= 7))[1] #number of obs with quality greater than or equal to 7
+dim(filter(white_wine, quality < 5))[1] #number of obs with quality less than 5 
+
+```
+   
+Quality     >6     <5
+
+Obs Red     217    63
+Obs White   1060   183
+
+It is interesting that for both red and white wines there were more observations that had a quality greater than 6. This means that for both red and white wine. 
+
+```{r}
+red_mean <- colMeans(select(red_wine, -class))
+red <- as.data.frame(red_mean)
+
+means <- mutate(red, white_mean = colMeans(select(white_wine, -class)))
+#create data frame with the mean values of both datasets 
+
+print(means)
+```
+
+We can see that most of the variable have different mean values for white and red wine. 
+The ones that have similar mean values are density, pH, alcohol and quality. 
+
+```{r}
+summary(white_wine)
+summary(red_wine)
+```
+
+2. Data Mining/Analysis
+
+```{r}
+train_white <- sample(1:nrow(white_wine),(.5*nrow(white_wine)))
+white_train <- white_wine[train_white,]
+white_test <- white_wine[-train_white,]
+```
+
+```{r}
+plot(white_train$quality, type="p")
+#points(ifelse(white_train$class=="good",col="red",col="blue"))
+```
+
+
+```{r}
+white_wine2 <- white_wine[,c(1:11,12)]
+glm.fit = glm(quality ~.,data=white_wine2, family=binomial)
+plot(glm.fit)
+
+```
+
+
+
+
+```{r}
+set.seed(1)
+tune.out=tune(svm,quality~.,data=white_train,kernel="linear",
+ranges=list(cost=c(0.001, 0.01, 0.1,1,5)))
+summary(tune.out)
+
+```
+
+
+```{r}
+bestmod=tune.out$best.model
+summary(bestmod)
+```
+
+
+Logistic Regression
+
+```{r}
+
+
+
+```
+
+

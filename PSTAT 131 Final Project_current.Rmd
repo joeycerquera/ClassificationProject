@@ -1,0 +1,332 @@
+---
+title: "Final Project"
+author: "Thomas Simons and Joey Cerquera"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output: pdf_document
+---
+
+
+```{r setup, echo=FALSE}
+library(knitr)
+# set global chunk options: images will be 7x5 inches
+knitr::opts_chunk$set(fig.width=7, fig.height=5)
+options(digits = 4)
+
+
+## indents are for indenting r code as formatted text
+## They may need to be adjusted depending on your OS
+# if your output looks odd, increase or decrease indent
+indent1 = '    '
+indent2 = '        '
+indent3 = '            '
+```
+
+
+```{r}
+library(tidyverse)
+library(tree)
+library(randomForest)
+library(gbm)
+library(ROCR)
+library(e1071)
+library(imager)   #load libraries 
+library(plyr)
+library(class)
+library(rpart)
+library(maptree)
+library(ROCR)
+```
+
+
+```{r}
+white_wine <- read.csv("~/PSTAT R Data/PSTAT 131/Final Project/winequality-white.csv", sep = ";")
+red_wine <- read.csv("~/PSTAT R Data/PSTAT 131/Final Project/winequality-red.csv", sep = ";")
+#import data 
+
+
+white_wine <- mutate(white_wine, class = factor(ifelse(white_wine$quality > 5, "good", "bad"), levels = c("good", "bad")))
+
+red_wine <- mutate(red_wine, class = factor(ifelse(red_wine$quality > 5, "good", "bad"), levels = c("good", "bad"))) 
+#create new factor called class for qood or bad wine qulity 
+```
+
+
+1. Exploratory Analysis 
+
+```{r}
+par(mfrow=c(1, 2))
+
+red_hist <- hist(red_wine$quality)  #histogram for red wine 
+white_hist <- hist(white_wine$quality)  #histogram for white wine 
+```
+
+White wine has more wines that are rated 6 than red wine. 
+
+
+
+```{r}
+#Outliers are observations with quality not equal to 5 or 6 
+
+dim(filter(red_wine, quality >= 7))[1] #number of obs with quality greater than or equal to 7
+dim(filter(red_wine, quality < 5))[1] #number of obs with quality less than 5 
+
+dim(filter(white_wine, quality >= 7))[1] #number of obs with quality greater than or equal to 7
+dim(filter(white_wine, quality < 5))[1] #number of obs with quality less than 5 
+
+```
+   
+Quality     >6     <5
+
+Obs Red     217    63
+Obs White   1060   183
+
+It is interesting that for both red and white wines there were more observations that had a quality greater than 6. This means that for both red and white wine most of the wines will be classified as good. 
+
+```{r}
+red_mean <- colMeans(select(red_wine, -class))
+red <- as.data.frame(red_mean)
+
+means <- mutate(red, white_mean = colMeans(select(white_wine, -class)))
+#create data frame with the mean values of both datasets 
+
+print(means)
+```
+
+We can see that most of the variable have different mean values for white and red wine. 
+The ones that have similar mean values are density, pH, alcohol and quality. 
+From this we can conclude that the variables without similar means are important for the prediction of wine quality. The means also tell us the different properties of white wine compared to red wine.  
+
+
+2. Principle Component Analysis 
+
+```{r}
+
+pr.out = prcomp(select(red_wine, -class), scale=TRUE, center = TRUE) 
+#run PCA for red wine 
+
+pr.out.white = prcomp(select(white_wine, -class), scale=TRUE, center = TRUE)
+#run PCA for white wine 
+```
+
+
+```{r}
+#white wine
+label_list <- factor(ifelse(white_wine$quality >6, "2", ifelse(white_wine$quality > 4, "1", "0")), levels = c("2", "1", "0"))
+label_list2 <- factor(ifelse(red_wine$quality >6, "2", ifelse(red_wine$quality > 4, "1", "0")), levels = c("2", "1", "0"))
+
+rainbow_colors <- rainbow(3)
+plot_colors <- rainbow_colors[label_list2]
+
+x1 = pr.out.white$x
+frame1 <- data.frame(x1)   #convert to data frame 
+plot(frame1$PC1,frame1$PC2, data = frame1, col = plot_colors,cex=.5,
+     main = "White Wine ") #plot first 2 PCs
+text(frame1$PC1,frame1$PC2, labels = label_list, cex=.5) #add labels 
+```
+
+
+```{r}
+#red wine 
+
+x = pr.out$x
+frame <- data.frame(x)   #convert to data frame 
+plot(frame$PC1,frame$PC2, data = frame, col = plot_colors,cex=.5,
+     main = "Red Wine") #plot first 2 PCs
+text(frame$PC1,frame$PC2, labels = label_list2, cex=.6) #add labels 
+```
+
+Looking at these two plots of PC1 versus PC2 we see that there is more clear clustering in the plot for red wine. In the plot for white wine there isn't as clear clustering, the highly rated wines and the low rated wines are mixed with the wines rated in the middle. This suggests that the chemical composition of red wine plays a larger role in determining quality than in white wine. Thus we should narrow our focus and look at red wine when trying to find the most important predictors and models. 
+
+For red wine it looks like low PC1 and high PC2 values give a type 0 wine or a low quality wine. When PC2 is low most of the wines are type 2 or high quality. 
+
+
+To see what variables have the most affect on the PC1 direction look at the loadings in decreasing order.
+
+```{r}
+frame1 <- data.frame(pr.out$rotation)   #data frame of PC loadings 
+PC1.loadings <- rownames_to_column(select(frame1, PC1))  #create row names column 
+abs.PC1 <- mutate_at(PC1.loadings,vars(PC1), funs(abs(.))) #take absloute value 
+abs.PC1.arrange <- arrange(abs.PC1, desc(PC1))  #arrange in decreasing order 
+print(abs.PC1.arrange) #print the loadings 
+```
+
+Then do the same thing but for the PC2 direction.
+
+```{r}
+frame2 <- data.frame(pr.out$rotation)   #data frame of PC loadings 
+PC2.loadings <- rownames_to_column(select(frame2, PC2))  #create row names column 
+abs.PC2 <- mutate_at(PC2.loadings,vars(PC2), funs(abs(.))) #take absloute value 
+abs.PC2.arrange <- arrange(abs.PC2, desc(PC2))  #arrange in decreasing order 
+print(abs.PC2.arrange) #print the loadings 
+```
+
+
+Now look a the proportion of variance explained by each Principal Component to see which PCs are significant. 
+
+```{r}
+pr.var=pr.out$sdev ^2
+pve <- pr.var/sum(pr.var)
+cumulative_pve <- cumsum(pve)
+  
+par(mfrow=c(1, 2))
+
+plot(pve, type="l", lwd=3)            #plot variance explined by index 
+plot(cumulative_pve, type="l", lwd=3) #plot cumulative vatiance explained 
+```
+
+
+
+Use random forests to see if there is different variable importance between red wine and white wine. want to use a higher number for test data so variable importance is more accurately measured. 
+
+Analysis:
+
+We first seperate the dataset into a test and training set. The training dataset has 7/10ths of the complete data. This is to test the biability of the data, as it is difficult to find a siilar dataset else where.
+
+```{r}
+
+set.seed(1)
+w_train = sample(1:nrow(white_wine), (.7*nrow(white_wine)))
+white_w.train = white_wine[w_train,]
+white_w.test = white_wine[-w_train,]
+white_w.train2 <-  select(white_w.train, -quality)
+white_w.test2 <-  select(white_w.test, -quality)
+
+r_train = sample(1:nrow(red_wine), (.7*nrow(red_wine)))
+red_w.train = red_wine[r_train,]
+red_w.test = red_wine[-r_train,]
+red_w.train2 <-  select(red_w.train, -quality)
+red_w.test2 <-  select(red_w.test, -quality)
+```
+
+
+We decide to tune the RandomForest for the best amount of trees to fit, after observing this computation, we note there is not much difference in misclassifcation error with different tree amounts.
+
+```{r}
+
+
+
+rf.red <- randomForest(class ~ ., data=red_w.train2,  mtry=3, ntree=500, importance=TRUE)
+rf.red
+#oob.red <- tuneRF(red_w.train2[,-12], red_w.train2[,12], stepFactor=2.5)
+#tune.r_fr <- tune(randomForest,class~.,data=red_w.train2,mtry=3,importance=TRUE, ranges=list(ntree=c(150,250,500,750)))
+#summary(tune.r_fr)
+#importance(rf.red)
+#varImpPlot(rf.red)
+```
+
+
+We replicate this tuning for the white wine as well, but with similar results. There is little to no change with more or less trees.
+
+```{r}
+rf.white <- randomForest(class ~ ., data=white_w.train2,  mtry=3, ntree=500, importance=TRUE)
+rf.white
+#oob.white <- tuneRF(white_w.train2[,-12], white_w.train2[,12], stepFactor=2.5)
+#tune.w_rf <- tune(randomForest,class~.,data=white_w.train2,mtry=3,importance=TRUE, ranges=list(ntree=c(5,7)))
+#summary(tune.w_rf)
+#rf.white <- randomForest(class ~ ., data=white_w.train2,  mtry=3, ntree=500, importance=TRUE)
+#importance(rf.white)
+#varImpPlot(rf.white)
+
+```
+
+
+Boosting
+
+Since there isn't a difference in variable importance between red wine and white wine using random forests above we will try using bagging since in considers all variables at each split. This time we won't use the training set since we want to consider as many variables as possible, so we will use the whole data set. 
+
+```{r}
+
+set.seed(1)
+boost.redw = gbm(ifelse(class=="good",1,0)~., data=red_w.train2, distribution="bernoulli", interaction.depth=4,n.trees = 100)
+summary(boost.redw)
+
+```
+
+
+```{r}
+set.seed(1)
+boost.whitew = gbm(ifelse(class=="good",1,0)~., data=white_w.train2, distribution="bernoulli", interaction.depth=4,n.trees = 1000)
+summary(boost.whitew)
+```
+
+
+Using the bagging method for classification we see that the most important predictor for white wine and red wine in terms of model accuracy and gini index. However, it is interesting that for white wine the second most important variable is volatile.acidity while the second most important predictor for red wine was sulfates. 
+
+
+White Wine Analysis with SVM - Joey
+
+For the Support Vector Machine we use a radial kernel, as we have a binary classifier. That as the only attainable values are "good" and "bad". This allows the model to be able to attain these values which would usually be difficult for most regression model regardless of dimensionality. We create a training and test dataset, to see if replicability is attainable. Next, as the SVM requires a Cost parameter as explained in the Methods section, we use the tune function to find the ideal cost to minimize misclassification error. Below is the summary of the tune function showing that the ideal or "best" Cost is 4.
+
+```{r}
+tune.w_svm <- tune(svm,class~.,data=white_w.train2,kernel="radial", ranges=list(cost=c(.1,1,3.5,4,4.5,7)))
+wine.bestpr <- predict(tune.w_rf$best.model,newdata = white_w.test2)
+summary(tune.w_svm)
+```
+
+```{r}
+tune.r_svm <- tune(svm,class~.,data=red_w.train2,kernel="radial", ranges=list(cost=c(1,4,7,10,15,20)))
+wine.bestpr <- predict(tune.r_rf$best.model,newdata = red_w.test2)
+summary(tune.r_svm)
+```
+
+
+
+By tuning the SVM we have obtained that the cost of 4.5 is the best model. This is because it reduces the misclassification error compared to several other costs. We should also note it also has the lowest false positive rate, which is desired for this particular situation.
+
+
+Misclassification Error for all Models, End Analysis
+
+
+```{r}
+print("Misclassification for Boost:White")
+yhat.boost = predict(boost.whitew, newdata = white_w.test2,n.trees=1000)
+boost.cpr <- ifelse(yhat.boost>0.5,"good","bad")
+boost.err = table(pred = boost.cpr, truth = white_w.test2$class)
+test.boost.err = 1 - sum(diag(boost.err))/sum(boost.err)
+test.boost.err
+
+print("Misclassification for Boost:Red")
+yhat.boost2 = predict (boost.redw, newdata = red_w.test2,n.trees=100)
+boost.cpr2 <- ifelse(yhat.boost2>0.5,"good","bad")
+boost.err2 = table(pred = boost.cpr2, truth = red_w.test2$class)
+test.boost.err2 = 1 - sum(diag(boost.err2))/sum(boost.err2)
+test.boost.err2
+```
+
+
+
+
+```{r}
+print("Misclassification for Random Forest:White")
+yhat.rf = predict (rf.white, newdata = white_w.test2, n.trees=250)
+rf.err = table(pred = yhat.rf, truth = white_w.test2$class)
+test.rf.err = 1 - sum(diag(rf.err))/sum(rf.err)
+test.rf.err
+
+print("Misclassification for Random Forest:Red")
+yhat.rf2 = predict (rf.red, newdata = red_w.test2, n.trees=500)
+# Confusion matrix
+rf.err2 = table(pred = yhat.rf2, truth = red_w.test2$class)
+test.rf.err2 = 1 - sum(diag(rf.err2))/sum(rf.err2)
+test.rf.err2
+```
+
+
+
+
+```{r}
+
+print("Misclassification for SVM:White")
+yhat.svm = predict(tune.w_svm$best.model, newdata = white_w.test2)
+svm.err = table(pred = yhat.svm, truth = white_w.test2$class)
+test.svm.err = 1 - sum(diag(svm.err))/sum(svm.err)
+test.svm.err
+
+print("Misclassification for SVM:Red")
+yhat.svm2 = predict(tune.r_svm$best.model, newdata = red_w.test2)
+svm.err2 = table(pred = yhat.svm2, truth = red_w.test2$class)
+test.svm.err2 = 1 - sum(diag(svm.err2))/sum(svm.err2)
+test.svm.err2
+
+```
+
